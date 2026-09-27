@@ -93,7 +93,17 @@ public final class Packager {
         Args args = new Args(argv);
         switch (args.command) {
             case "render" -> render(args);
-            case "publish" -> new Packager(args).replay();
+            case "publish" -> {
+                Packager p = new Packager(args);
+                // Experiments stop packagers with SIGTERM; report what was published up to then.
+                Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                    try {
+                        p.report();
+                    } catch (IOException ignored) {
+                    }
+                }));
+                p.replay();
+            }
             case "live" -> new Packager(args).live();
             default -> throw new IllegalArgumentException("commands: render, publish, live");
         }
@@ -170,6 +180,15 @@ public final class Packager {
         }
         // First segment whose publish time is still ahead of us.
         long k = Math.max(0, Math.floorDiv(start - epochMs - encodeDelayMs - lagMs, durationMs));
+        // Optionally publish history first, as a pipeline that has been running for a while would have.
+        long backfill = args.lng("backfill-segments", 0);
+        for (long b = Math.max(0, k - backfill); b < k; b++) {
+            List<java.util.concurrent.CompletableFuture<Void>> batch = new ArrayList<>();
+            for (Loop l : loops) {
+                batch.add(put(l.rendition(), b + ".m4s", l.segments().get((int) (b % l.segments().size())), b, false));
+            }
+            batch.forEach(java.util.concurrent.CompletableFuture::join);
+        }
         while (true) {
             long due = epochMs + (k + 1) * durationMs + encodeDelayMs + lagMs;
             long now = System.currentTimeMillis();
@@ -324,7 +343,12 @@ public final class Packager {
 
     // ---------------------------------------------------------------- report
 
+    private final java.util.concurrent.atomic.AtomicBoolean reported = new java.util.concurrent.atomic.AtomicBoolean();
+
     private void report() throws IOException {
+        if (!reported.compareAndSet(false, true)) {
+            return;
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("pipeline", pipeline);
         out.put("puts", puts.get());

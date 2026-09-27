@@ -24,12 +24,27 @@ PUBLISH = f"http://localhost:{PUBLISH_PORT}"
 EDGE = f"http://localhost:{EDGE_PORT}"
 REDIS_WRITE, REDIS_READ = "redis://localhost:27379", "redis://localhost:27380"
 TOXI_API = "http://localhost:27474"
-JARS = {
+_BUILT = {
     "publish": ROOT / "publish-server/build/libs/publish-server.jar",
     "edge": ROOT / "edge-server/build/libs/edge-server.jar",
     "packager": ROOT / "packager/build/libs/packager.jar",
     "fleet": ROOT / "edge-sim/build/libs/edge-sim.jar",
 }
+
+
+def _snapshot_jars():
+    """Copies the built jars once per harness process, so a rebuild mid-experiment cannot swap binaries."""
+    import shutil
+    dest = RUN / "jars" / str(os.getpid())
+    dest.mkdir(parents=True, exist_ok=True)
+    out = {}
+    for k, src in _BUILT.items():
+        shutil.copy2(src, dest / src.name)
+        out[k] = dest / src.name
+    return out
+
+
+JARS = _snapshot_jars()
 
 EVENT_TEMPLATE = """events:
   - id: demo

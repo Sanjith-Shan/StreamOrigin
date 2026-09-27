@@ -116,7 +116,7 @@ public final class OriginRuntime implements AutoCloseable {
             ConcurrencyLimit limit = "fixed".equals(ap.getMode())
                     ? ConcurrencyLimit.fixed(ap.getFixedLimit())
                     : new GradientLimit(ap.getInitialLimit(), ap.getMinLimit(), ap.getMaxLimit(), ap.getTolerance(), ap.getWindowMs());
-            admission = new AdmissionController(features.isPriority(), limit, ap.getDvrShare(), ap.getLiveRate(),
+            admission = new AdmissionController(features.isPriority(), limit, ap.getDvrShare(), ap.getLiveFloor(), ap.getLiveRate(),
                     ap.getDvrRate(), metrics);
             serveHandler = new ServeHandler(controlPlane, props, resolver, waiters, admission, metrics, clock);
             edgeSink = new EdgeSink(resolver, waiters, metrics);

@@ -123,6 +123,8 @@ public class OriginProperties {
         private double tolerance = 1.5;
         private long windowMs = 100;
         private double dvrShare = 0.5;
+        /** Live-edge requests are admitted up to max(adaptive limit, this). */
+        private int liveFloor = 512;
         private int liveEdgeSegments = 3;
         private double liveRate = 100_000;
         private double dvrRate = 100_000;
@@ -144,6 +146,8 @@ public class OriginProperties {
         public void setWindowMs(long v) { windowMs = v; }
         public double getDvrShare() { return dvrShare; }
         public void setDvrShare(double v) { dvrShare = v; }
+        public int getLiveFloor() { return liveFloor; }
+        public void setLiveFloor(int v) { liveFloor = v; }
         public int getLiveEdgeSegments() { return liveEdgeSegments; }
         public void setLiveEdgeSegments(int v) { liveEdgeSegments = v; }
         public double getLiveRate() { return liveRate; }

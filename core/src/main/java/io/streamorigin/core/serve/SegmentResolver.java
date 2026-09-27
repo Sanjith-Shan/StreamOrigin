@@ -22,8 +22,10 @@ import java.util.function.Function;
  * Finds the bytes to serve for a segment: the write-through cache first, then the read store,
  * with identical concurrent lookups coalesced into one store read.
  *
- * <p>With first-valid selection on, pipelines are tried in the event's configured order and the
- * first copy that passes {@link SegmentValidator} wins. With it off, the first copy present is
+ * <p>With first-valid selection on, a store read tries pipelines in the event's configured order
+ * and the first copy that passes {@link SegmentValidator} wins. On the write-through path the
+ * first valid copy to arrive wins instead: the pipelines share an epoch and produce
+ * interchangeable segments, so waiting for a preferred pipeline would only add latency. With it off, the first copy present is
  * served as-is, which is what an origin that simply stores whatever was PUT would do.
  */
 public final class SegmentResolver {

@@ -7,9 +7,11 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Priority admission. Each class has a token bucket, and both share one concurrency limit, but
- * replay traffic may only use a fraction of it. When the origin is saturated, DVR requests are
- * refused first while live-edge requests still find room.
+ * Priority admission. Each class has a token bucket. DVR requests are admitted only while the
+ * in-flight count is under a fraction of the adaptive concurrency limit; live-edge requests are
+ * admitted up to the larger of that limit and a fixed live floor. So when service time inflates,
+ * the adaptive limit shrinks and replay traffic is refused first, while live traffic is refused
+ * only at the hard ceiling.
  */
 public final class AdmissionController {
 
@@ -29,15 +31,17 @@ public final class AdmissionController {
     private final boolean enabled;
     private final ConcurrencyLimit limit;
     private final double dvrShare;
+    private final int liveFloor;
     private final Map<RequestClass, TokenBucket> buckets = new EnumMap<>(RequestClass.class);
     private final AtomicInteger inflight = new AtomicInteger();
     private final OriginMetrics metrics;
 
-    public AdmissionController(boolean enabled, ConcurrencyLimit limit, double dvrShare,
+    public AdmissionController(boolean enabled, ConcurrencyLimit limit, double dvrShare, int liveFloor,
                                double liveRate, double dvrRate, OriginMetrics metrics) {
         this.enabled = enabled;
         this.limit = limit;
         this.dvrShare = dvrShare;
+        this.liveFloor = liveFloor;
         this.metrics = metrics;
         buckets.put(RequestClass.LIVE_EDGE, new TokenBucket(liveRate, Math.max(1, liveRate / 5), System::nanoTime));
         buckets.put(RequestClass.DVR, new TokenBucket(dvrRate, Math.max(1, dvrRate / 5), System::nanoTime));
@@ -55,7 +59,7 @@ public final class AdmissionController {
             return new Permit(cls, inflight.incrementAndGet());
         }
         int lim = limit.limit();
-        int cap = cls == RequestClass.LIVE_EDGE ? lim : Math.max(1, (int) (lim * dvrShare));
+        int cap = cls == RequestClass.LIVE_EDGE ? Math.max(lim, liveFloor) : Math.max(1, (int) (lim * dvrShare));
         while (true) {
             int current = inflight.get();
             if (current >= cap) {
