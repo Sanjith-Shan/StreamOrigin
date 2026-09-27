@@ -38,8 +38,26 @@ the wall clock (headless Chrome and hls.js, `results/m5_player.jsonl`):
 
 ![Demo page: the live stream playing through the origin, with drift and origin counters](docs/demo.png)
 
+The same counters in Grafana (`docker compose --profile obs up -d`), during a demo run with a small fleet:
+
+![Grafana dashboard: write latency, live-edge serve latency, where bytes came from, pipelines, control plane](docs/grafana.png)
+
 The bugs found on the way, including the ones that invalidated early numbers, are in
-[`BUG_LOG.md`](BUG_LOG.md).
+[`BUG_LOG.md`](BUG_LOG.md). How the measurements translate into sizing is in
+[`docs/CAPACITY.md`](docs/CAPACITY.md).
+
+## Milestones
+
+| | Deliverable | Done-when, as measured |
+|---|---|---|
+| M0 | Repo, CI, Compose, ffmpeg packager | 30 two-second CMAF segments per rendition rendered, sizes in `data/segments/sizes.json` |
+| M1 | Publish and edge servers, chunked store, DASH manifest | 10 caches played 60 s with 900 of 900 deliveries, 0 gaps |
+| M2 | Two pipelines, first valid, hold-open, negative caching, control plane | exp2 and exp3 |
+| M3 | Write-through cache, separate stores and processes, storm mode | exp1 |
+| M4 | Priority and shedding, 404 storm, three repeats, `NUMBERS.md` | exp4, exp5 |
+| M5 | Stream-event headers, HLS with blocking reload, player demo, Grafana, bug log | a browser played the live edge at 0 segments of median drift (max 1) |
+| M6 | Restart durability, slow store, capacity note | exp7, exp6, `docs/CAPACITY.md` |
+| Extra | Chaos run with invariants | exp8: 24 faults across 3 runs, 0 of 67,500 deliveries missed or corrupt |
 
 ## Run it
 
