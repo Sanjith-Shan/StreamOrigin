@@ -25,6 +25,13 @@ public class OriginProperties {
     private CacheProps cache = new CacheProps();
     private Admission admission = new Admission();
     private List<String> edges = new ArrayList<>(List.of("http://localhost:27081"));
+    /**
+     * Combined role only: serve the publish path on this port with its own Netty event loops,
+     * so publishing keeps its own threads even when both paths share a process. -1 keeps publish
+     * on the main port and event loops (the naive layout).
+     */
+    private int publishPort = -1;
+    private int publishLoopThreads = 2;
 
     public static class Features {
         private boolean controlPlane = true;
@@ -199,6 +206,10 @@ public class OriginProperties {
     public void setCache(CacheProps v) { cache = v; }
     public Admission getAdmission() { return admission; }
     public void setAdmission(Admission v) { admission = v; }
+    public int getPublishPort() { return publishPort; }
+    public void setPublishPort(int v) { publishPort = v; }
+    public int getPublishLoopThreads() { return publishLoopThreads; }
+    public void setPublishLoopThreads(int v) { publishLoopThreads = v; }
     public List<String> getEdges() { return edges; }
     public void setEdges(List<String> v) { edges = v; }
 }

@@ -29,11 +29,11 @@ def origin(base, **extra):
 
 
 def one_run(exp, label, config, pipelines, packager_flags=None, fleet=None, measure_s=60, warmup_s=6,
-            repeat=0, during=None, dvr=150, edge_heap="2g", jvm_opts=(), setup=None, extra=None):
+            repeat=0, during=None, dvr=150, edge_heap="2g", jvm_opts=(), setup=None, extra=None, flush=True):
     """Runs one configuration and appends the ledger row. `during(run)` runs alongside the fleet."""
     packager_flags = packager_flags or {}
     fleet = dict(fleet or {})
-    with h.run(f"{exp}-{label}-{repeat}", pipelines=pipelines, dvr=dvr) as r:
+    with h.run(f"{exp}-{label}-{repeat}", pipelines=pipelines, dvr=dvr, flush=flush) as r:
         if setup:
             setup()
         r.start_origin(config["topology"], config["props"], edge_heap=edge_heap, jvm_opts=jvm_opts)
@@ -163,35 +163,47 @@ def exp4(repeats):
     for rep in range(repeats):
         for rate in (1000, 3000):
             for label, cfg in configs:
-                print(brief(one_run("exp4", f"{label}-m{rate}", cfg, TWO,
+                # A 10-segment DVR window, so "older than the window" requests exist in a young event.
+                print(brief(one_run("exp4", f"{label}-m{rate}", cfg, TWO, dvr=10,
                                     fleet={"caches": 50, "junk_rate": rate}, measure_s=45, repeat=rep,
                                     extra={"junk_rate": rate, "config": label})), flush=True)
 
 
 # ---------------------------------------------------------------------------------------- exp5
-# The origin is given two processors (two Netty event loops) so that it saturates at a load the
-# laptop can generate without the fleet itself becoming the bottleneck.
-EXP5_JVM = ("-XX:ActiveProcessorCount=2",)
+# The serve path gets one Netty I/O thread, so the origin saturates at a load the laptop can generate
+# without the fleet and the host collapsing first (bugs 4 and 8). The publish path runs on its own
+# port and event loops inside the same process, so this experiment measures serve-path priority,
+# not write starvation.
+EXP5_JVM = ("-Dreactor.netty.ioWorkerCount=1",)
+EXP5_PUBLISH = {"publish-port": 27080}
 EXP5_DVR_WINDOW = 40
 
 
-def exp5_run(label, rate, priority, repeat, mode="gradient", measure_s=30, exp="exp5"):
-    cfg = rocks({"features.priority": priority, "admission.mode": mode}, label)
+def exp5_run(label, rate, priority, repeat, mode="gradient", measure_s=30, exp="exp5", dvr_rate=None):
+    props = {"features.priority": priority, "admission.mode": mode, **EXP5_PUBLISH}
+    if dvr_rate:
+        # Priority's token bucket for replay traffic, set from the measured capacity.
+        props["admission.dvr-rate"] = dvr_rate
+    cfg = rocks(props, label)
     return one_run(exp, label, cfg, TWO, packager_flags={"A": {"backfill_segments": EXP5_DVR_WINDOW}},
                    fleet={"caches": 50, "dvr_rate": rate}, measure_s=measure_s, warmup_s=12, repeat=repeat,
-                   dvr=EXP5_DVR_WINDOW, edge_heap="1g", jvm_opts=EXP5_JVM,
-                   extra={"dvr_rate": rate, "priority": priority, "admission_mode": mode})
+                   dvr=EXP5_DVR_WINDOW, edge_heap="1g", jvm_opts=EXP5_JVM, flush=False,
+                   extra={"dvr_rate": rate, "priority": priority, "admission_mode": mode, "dvr_bucket": dvr_rate})
 
 
-def exp5_capacity(repeats=1):
+def exp5_capacity(repeats=1, start_from=None):
     """Capacity: the highest DVR rate the origin serves with priority off while DVR p99 stays under
     500 ms and no live-edge delivery is missed."""
     capacity = 0
-    for rate in (100, 200, 300, 400, 600, 800, 1000):
-        try:
-            row = exp5_run(f"cap-{rate}", rate, "false", 0, exp="exp5_capacity", measure_s=20)
-        except Exception as e:  # the origin stopped answering: past capacity
-            print(f"capacity sweep {rate}/s: origin unresponsive ({e})", flush=True)
+    rates = (100, 200, 300, 400, 500, 600, 800, 1000, 1200, 1400, 1600)
+    if start_from:
+        # Resume a sweep whose earlier points are already in the ledger.
+        capacity = int(json.load(open(h.RESULTS / "exp5_capacity_value.json"))["capacity_rps"])
+        rates = tuple(r for r in rates if r >= start_from)
+    for rate in rates:
+        row = exp5_run(f"cap-{rate}", rate, "false", 0, exp="exp5_capacity", measure_s=20)
+        if any(v.get("unresponsive") for v in row["server"].values()):
+            print(f"capacity sweep {rate}/s: origin stopped answering -> beyond capacity", flush=True)
             break
         L = row["fleet"]["latency"].get("dvr.request_us", {})
         c = row["fleet"]["counters"]
@@ -214,11 +226,26 @@ def exp5_capacity(repeats=1):
 def exp5(repeats, capacity=None):
     """Overload at 1.5x and 2x measured capacity, with and without priority."""
     capacity = capacity or int(json.load(open(h.RESULTS / "exp5_capacity_value.json"))["capacity_rps"])
+    # Priority off already collapses the origin at 1.5x, and a collapsed origin plus the fleet starve
+    # the whole laptop (Docker Desktop hung twice). So priority off runs at 1.5x only; 2x is priority on.
+    cases = [(1.5, "no-priority", "false"), (1.5, "priority", "true"), (2.0, "priority", "true")]
     for rep in range(repeats):
-        for mult in (1.5, 2.0):
-            rate = int(capacity * mult)
-            for label, prio in (("no-priority", "false"), ("priority", "true")):
-                print(brief(exp5_run(f"{label}-x{mult}", rate, prio, rep)), flush=True)
+        for mult, label, prio in cases:
+            print(brief(exp5_run(f"{label}-x{mult}", int(capacity * mult), prio, rep,
+                                 dvr_rate=capacity if prio == "true" else None)), flush=True)
+
+
+def exp5_np2(repeats):
+    """Priority off at 2x, added once separate publish loops stopped the collapse that bug 8 guarded against."""
+    capacity = int(json.load(open(h.RESULTS / "exp5_capacity_value.json"))["capacity_rps"])
+    for rep in range(repeats):
+        print(brief(exp5_run("no-priority-x2.0", int(capacity * 2.0), "false", rep)), flush=True)
+
+
+def _have(exp, label, repeat):
+    p = h.RESULTS / f"{exp}.jsonl"
+    return p.exists() and any(json.loads(l)["label"] == label and json.loads(l)["repeat"] == repeat
+                              for l in p.read_text().splitlines() if l.strip())
 
 
 # ---------------------------------------------------------------------------------------- exp6
@@ -330,7 +357,8 @@ def exp2_redo(repeats):
 
 
 EXPERIMENTS = {"diag_shared100": diag_shared100, "exp2_redo": lambda r: exp2_redo(r),"exp1": exp1, "exp2": exp2, "exp3": exp3, "exp4": exp4, "exp5_capacity": lambda r: exp5_capacity(),
-               "exp5": exp5, "exp6": exp6, "exp7": exp7,
+               "exp5_capacity_ext": lambda r: exp5_capacity(start_from=1200),
+               "exp5": exp5, "exp5_np2": exp5_np2, "exp6": exp6, "exp7": exp7,
                "exp8": exp8}
 
 if __name__ == "__main__":

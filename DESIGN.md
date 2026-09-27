@@ -124,5 +124,8 @@ every edge-server.
   Desktop's network stack. A second project was benchmarking on the same machine the same night;
   both used a lock file so their runs never overlapped, and every ledger row records load.
 - No real CDN, no real players at scale, no Cassandra, no cross-region network.
-- The overload experiment runs the origin on the embedded RocksDB store with two processors so
-  that the laptop can overload it without the fleet itself collapsing first (bug 4).
+- The overload experiment runs the origin on the embedded RocksDB store in one process, so no
+  store traffic crosses Docker (bug 4). Its capacity figure is the highest rate the sweep tried
+  that the origin passed, 1,600 DVR requests per second; the sweep stopped there, so the true
+  knee is at or above it. Priority off was run at 1.5x only: it already collapses the origin
+  there, and a collapsed origin plus the fleet starved the whole laptop (bug 8).

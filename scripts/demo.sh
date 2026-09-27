@@ -11,6 +11,8 @@ mkdir -p "$OUT"
 [ -f edge-server/build/libs/edge-server.jar ] || ./gradlew -q build -x test
 
 docker compose up -d redis-write redis-read >/dev/null
+# A new run of the same event id must never serve the previous run's segments (bug 10).
+for svc in redis-write redis-read; do docker compose exec -T "$svc" redis-cli FLUSHALL >/dev/null; done
 NOW=$(( $(date +%s) * 1000 ))
 EPOCH=$(( NOW - NOW % 2000 ))
 sed "s/^    epoch: .*/    epoch: $EPOCH/; s/encodeDelayMs: 600 }$/encodeDelayMs: 1500 }/; s/{ id: B, encodeDelayMs: 1500 }/{ id: B, encodeDelayMs: 1700 }/" \

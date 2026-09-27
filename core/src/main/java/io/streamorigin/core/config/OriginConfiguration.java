@@ -63,7 +63,7 @@ public class OriginConfiguration {
                 })
                 .GET("/control/events/{event}", req -> eventInfo(rt, req))
                 .POST("/control/events/{event}/notifications", req -> addNotification(rt, req));
-        if (rt.publishHandler != null) {
+        if (rt.publishHandler != null && !separatePublishServer(rt.props)) {
             r.route(PUT("/publish/{pipeline}/{event}/{rendition}/{file}"), rt.publishHandler::put);
         }
         if (rt.serveHandler != null) {
@@ -75,6 +75,42 @@ public class OriginConfiguration {
                     .route(POST("/internal/notify"), req -> notifyEdge(rt, req));
         }
         return r.build();
+    }
+
+    static boolean separatePublishServer(OriginProperties props) {
+        return props.getRole() == OriginProperties.Role.COMBINED && props.getPublishPort() > 0;
+    }
+
+    /**
+     * In a combined process, the publish path can run on its own port and its own event loops, the
+     * in-process version of separate publish and serve stacks.
+     */
+    @Bean(destroyMethod = "disposeNow")
+    @org.springframework.context.annotation.Conditional(PublishPortCondition.class)
+    reactor.netty.DisposableServer publishServer(OriginRuntime rt) {
+        RouterFunction<ServerResponse> publish = RouterFunctions.route()
+                .route(PUT("/publish/{pipeline}/{event}/{rendition}/{file}"), rt.publishHandler::put)
+                .GET("/actuator/health", req -> ServerResponse.ok().bodyValue("{\"status\":\"UP\"}"))
+                .build();
+        var adapter = new org.springframework.http.server.reactive.ReactorHttpHandlerAdapter(
+                RouterFunctions.toHttpHandler(publish));
+        return reactor.netty.http.server.HttpServer.create()
+                .port(rt.props.getPublishPort())
+                .runOn(reactor.netty.resources.LoopResources.create("publish-loop",
+                        rt.props.getPublishLoopThreads(), true))
+                .handle(adapter)
+                .bindNow();
+    }
+
+    static final class PublishPortCondition implements org.springframework.context.annotation.Condition {
+        @Override
+        public boolean matches(org.springframework.context.annotation.ConditionContext ctx,
+                               org.springframework.core.type.AnnotatedTypeMetadata md) {
+            var env = ctx.getEnvironment();
+            String role = env.getProperty("origin.role", "combined");
+            int port = env.getProperty("origin.publish-port", Integer.class, -1);
+            return "combined".equalsIgnoreCase(role) && port > 0;
+        }
     }
 
     /** Returns the admission slot once the response has been written, and records serve latency. */

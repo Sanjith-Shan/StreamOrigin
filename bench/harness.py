@@ -103,7 +103,26 @@ def wait_healthy(url, timeout=60):
     raise RuntimeError(f"{url} did not become healthy")
 
 
+def docker_healthy(timeout=15):
+    try:
+        subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"], capture_output=True, check=True,
+                       timeout=timeout)
+        return True
+    except Exception:
+        return False
+
+
+def wait_for_docker():
+    waited = 0
+    while not docker_healthy():
+        if waited % 300 == 0:
+            print("DOCKER UNHEALTHY: waiting for Docker Desktop", flush=True)
+        time.sleep(30)
+        waited += 30
+
+
 def flush_redis():
+    wait_for_docker()
     for svc in ("redis-write", "redis-read"):
         subprocess.run(["docker", "compose", "exec", "-T", svc, "redis-cli", "FLUSHALL"], cwd=ROOT,
                        capture_output=True, check=True)
@@ -161,6 +180,9 @@ class Run:
                                    f"--server.port={EDGE_PORT}"] + common + extra)
             wait_healthy(EDGE)
             self.publish_url = EDGE
+            if int(props.get("publish-port", -1)) > 0:
+                wait_healthy(PUBLISH)
+                self.publish_url = PUBLISH
         else:
             self._spawn("publish", [JAVA, "-Xmx1g", "-jar", str(JARS["publish"])] + common + extra)
             self._spawn("edge", [JAVA, f"-Xmx{edge_heap}", *self.jvm_opts, "-jar", str(JARS["edge"])] + common + extra)
@@ -209,8 +231,14 @@ class Run:
     def server_stats(self):
         out = {}
         for url in self.server_urls():
-            s = http_json(url + "/internal/stats")
-            out[s["role"]] = s
+            try:
+                s = http_json(url + "/internal/stats", timeout=15)
+                out[s["role"]] = s
+            except Exception as e:
+                # An origin that has stopped answering is a result, not a harness failure.
+                role = "combined" if self.topology == "combined" else ("publish" if url == PUBLISH else "edge")
+                out[role] = {"role": role, "unresponsive": True, "error": repr(e), "counters": {}, "gauges": {},
+                             "latency_us": {}, "cpu_ms": 0, "window_ms": 1}
         return out
 
     def run_fleet(self, **flags):
@@ -245,8 +273,9 @@ class Run:
 
 
 @contextmanager
-def run(name, **kw):
-    flush_redis()
+def run(name, flush=True, **kw):
+    if flush:
+        flush_redis()
     r = Run(name, **kw)
     try:
         yield r

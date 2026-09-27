@@ -103,7 +103,8 @@ def sections():
                          med([(r["packagers"].get("A") or {}).get("client_over_500ms", 0) + (r["packagers"].get("B") or {}).get("client_over_500ms", 0) for r in x]),
                          med([fc(r, "live.bytes") / r["measure_s"] / 1e6 for r in x], "{:.1f}"),
                          med([rd / max(1, p) for rd, p in zip(reads, publishes)], "{:.2f}"),
-                         med([fc(r, "live.missing") for r in x]), med([fl(r, "live.publish_to_first_byte_us", "p99") for r in x])])
+                         med([fc(r, "live.missing") for r in x]), med([fc(r, "live.delivered_corrupt") for r in x]),
+                         med([fl(r, "live.publish_to_first_byte_us", "p99") for r in x])])
         out.append("## exp1 storm: write latency while N caches request the newest segment within 100 ms (`results/exp1.jsonl`)\n")
         out.append("naive: one process, one store connection, every serve feature off. designed-shared: every serve "
                    "feature on, but publish and serve share one process and one store. designed: separate "
@@ -111,8 +112,16 @@ def sections():
                    "publish handler from request start to acknowledgement. Two pipelines publish every segment of "
                    "3 renditions, so 3 PUTs per pipeline every 2 s.\n")
         out.append(table(["config", "caches", "write p50 ms", "write p99 ms", "write max ms", "writes over 500 ms (client)",
-                          "served MB/s", "store reads per publish", "live missing", "publish to first byte p99 ms"], body))
+                          "served MB/s", "store reads per publish", "live missing", "corrupt delivered", "publish to first byte p99 ms"], body))
         out.append(f"\n{len(rs)} runs, 45 s each, {load_note(rs)}.\n")
+
+    rs = rows("exp1_diag")
+    if rs:
+        out.append("### exp1 re-check of designed-shared at 100 caches (`results/exp1_diag.jsonl`)\n")
+        out.append("Two of the three exp1 runs above reported corrupt deliveries (4 and 34) with no fault injected; see "
+                   "`BUG_LOG.md` bug 6. Re-run with a fleet that separates truncated transfers from wrong bytes: "
+                   + "; ".join(f"repeat {r['repeat']}: {fc(r, 'live.delivered')} delivered, {fc(r, 'live.truncated')} truncated, "
+                               f"{fc(r, 'live.delivered_corrupt')} corrupt, write p99 {write_lat(r, 'p99'):.0f} ms" for r in rs) + ".\n")
 
     rs = rows("exp2")
     if rs:
@@ -204,13 +213,31 @@ def sections():
                          med([fc(r, "dvr.status.200") / r["measure_s"] for r in x]),
                          med([fl(r, "dvr.request_us.200", "p99") for r in x])])
         out.append("## exp5 overload: live traffic versus replay traffic (`results/exp5.jsonl`)\n")
-        out.append(f"Measured capacity: **{c['capacity_rps']} DVR requests/s** ({c['rule']}; sweep in "
-                   f"`{c['sweep']}`). The origin runs as one process on embedded RocksDB with two processors, 50 live "
-                   "caches on 3 renditions, DVR readers open-loop at 1.5x and 2x capacity, 30 s.\n")
+        out.append(f"Capacity: **{c['capacity_rps']} DVR requests/s**, the {c['rule']}; the sweep's highest point, so "
+                   f"the true knee is at or above it (sweep in `{c['sweep']}`). The origin runs as one process on embedded "
+                   "RocksDB with one Netty I/O thread on the serve path and the publish path on its own port and event "
+                   "loops; 50 live caches on 3 renditions; DVR readers open-loop at 1.5x and 2x capacity; 30 s. With "
+                   "priority on, the DVR token bucket is set to the capacity.\n")
         out.append(table(["config", "DVR req/s offered", "live publish to first byte p99 ms",
                           "live request to delivery p99 ms", "live missing", "DVR refused with 503 %",
                           "DVR served per s", "DVR p99 ms (served)"], body))
         out.append(f"\n{len(rs)} runs, {load_note(rs)}.\n")
+        out.append("**Reading it.** At 1.5x the origin was not yet past its knee: every live segment arrived with priority "
+                   "off or on, and live p99 is inside the run-to-run spread either way. At 2x it was: with priority off "
+                   "the origin collapsed and most live deliveries were missed, while with priority on, replay was held to "
+                   "the configured rate, half of it was refused with a 503 and `max-age=5`, and every live segment "
+                   "arrived. The priority-off 2x runs were added after the rest (bug 8 had ruled them out until the publish "
+                   "path got its own event loops), so they ran a few minutes later in the same session.\n")
+        v1 = rows("exp5_v1")
+        if v1:
+            x = [r for r in v1 if r["label"] == "priority-x1.5"]
+            y = [r for r in v1 if r["label"] == "no-priority-x1.5"]
+            if x and y:
+                out.append(f"The failure it could not prevent is in `results/exp5_v1.jsonl` (bug 9): with the publish path on "
+                           f"the same event loops as the serve path, 2,400 DVR requests/s starved the writes. Live deliveries "
+                           f"were {fc(y[0], 'live.delivered')} of {y[0]['fleet']['expected_live_deliveries']} with priority off "
+                           f"and {fc(x[0], 'live.delivered')} of {x[0]['fleet']['expected_live_deliveries']} with it on, write "
+                           f"p99 {write_lat(x[0], 'p99'):.0f} ms. Isolating the publish path is what fixed it.\n")
 
     rs = rows("exp6")
     if rs:
@@ -237,7 +264,7 @@ def sections():
     rs = rows("exp7")
     if rs:
         body = [[r["repeat"], r.get("side", {}).get("restart_s"), fc(r, "live.delivered"), r["fleet"]["expected_live_deliveries"],
-                 fc(r, "live.missing"), fc(r, "live.errors"), fl(r, "live.available_to_delivered_us", "max")] for r in rs]
+                 fc(r, "live.missing"), fc(r, "live.errors"), round(fl(r, "live.available_to_delivered_us", "max") or 0)] for r in rs]
         out.append("## exp7 restart durability: edge-server killed with SIGKILL at 20 s (`results/exp7.jsonl`)\n")
         out.append("50 caches, 60 s. The new process starts with an empty cache and resumes from the read store. "
                    "Caches give up on a segment after 10 s.\n")
@@ -249,7 +276,7 @@ def sections():
     if rs:
         body = [[r["repeat"], ", ".join(f"{f['fault']}@{f['t_s']:.0f}s" for f in r.get("side", {}).get("faults", [])),
                  fc(r, "live.delivered"), r["fleet"]["expected_live_deliveries"], fc(r, "live.missing"),
-                 fc(r, "live.delivered_corrupt"), write_lat(r, "p99")] for r in rs]
+                 fc(r, "live.delivered_corrupt"), round(write_lat(r, "p99") or 0)] for r in rs]
         out.append("## exp8 chaos: seeded random faults for five minutes (`results/exp8.jsonl`)\n")
         out.append("50 caches plus 30 DVR requests/s. Faults: kill pipeline A (restart 10 to 20 s later), put pipeline B "
                    "3 s behind schedule, SIGKILL the edge-server, add 200 ms to the read store, make A corrupt half its "
@@ -257,6 +284,18 @@ def sections():
                    "write p99 under 500 ms.\n")
         out.append(table(["repeat", "faults (time into run)", "delivered", "expected", "missing", "corrupt delivered",
                           "write p99 ms"], body))
+        out.append("")
+    rs = rows("m5_player")
+    if rs:
+        body = [[r["ts"][:16], r["played_s"], r["steady_samples"], r["drift_segments"]["median"], r["drift_segments"]["max"],
+                 r["behind_wall_clock_s"]["median"], r["video"].get("decoded"), r["video"].get("dropped"),
+                 "yes" if "ad-break" in (r["video"].get("events") or "") else "no"] for r in rs if r.get("drift_segments")]
+        out.append("## M5 player: a real browser plays the live edge (`results/m5_player.jsonl`)\n")
+        out.append("Headless Chrome with hls.js on the demo page, two real-time ffmpeg pipelines publishing to the split "
+                   "origin (`scripts/demo.sh`, `bench/player_check.py`). Drift is the origin's live-edge segment minus the "
+                   "segment on screen, sampled every 500 ms after the first 20 s.\n")
+        out.append(table(["run", "played s", "samples", "drift median (segments)", "drift max", "behind wall clock s",
+                          "frames decoded", "frames dropped", "ad-break header seen"], body))
         out.append("")
     return out
 

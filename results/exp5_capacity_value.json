@@ -1,0 +1,6 @@
+{
+  "capacity_rps": 1600,
+  "rule": "highest swept DVR rate with priority off where DVR p99 < 500 ms, >= 99% of DVR requests answered 200, and zero live-edge deliveries missed",
+  "sweep": "results/exp5_capacity.jsonl",
+  "ts": "2026-09-27T04:19:34-0700"
+}

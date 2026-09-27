@@ -12,19 +12,23 @@ Machine: Mac15,7, Apple M3 Pro, 12 cores, 18 GB, macOS 26.5.1, openjdk version "
 
 naive: one process, one store connection, every serve feature off. designed-shared: every serve feature on, but publish and serve share one process and one store. designed: separate publish-server and edge-server processes on separate stores. Write latency is measured in the publish handler from request start to acknowledgement. Two pipelines publish every segment of 3 renditions, so 3 PUTs per pipeline every 2 s.
 
-| config | caches | write p50 ms | write p99 ms | write max ms | writes over 500 ms (client) | served MB/s | store reads per publish | live missing | publish to first byte p99 ms |
-|---|---|---|---|---|---|---|---|---|---|
-| naive | 25 | 30 [29 to 31] | 208 [207 to 241] | 211 [208 to 241] | 0 | 25.5 [24.4 to 25.5] | 61.13 [59.78 to 61.15] | 0 | 534 [528 to 541] |
-| designed-shared | 25 | 30 [30 to 31] | 76 [58 to 107] | 81 [62 to 108] | 0 | 25.5 | 0.53 [0.51 to 1.09] | 0 | 62 [59 to 84] |
-| designed | 25 | 27 [26 to 27] | 56 [44 to 56] | 57 [49 to 57] | 0 | 25.5 | 0.52 [0.52 to 0.53] | 0 | 81 [77 to 84] |
-| naive | 50 | 31 [27 to 33] | 336 [334 to 429] | 388 [343 to 429] | 0 | 51.1 [48.8 to 51.1] | 124.27 [119.30 to 125.00] | 0 | 769 [738 to 771] |
-| designed-shared | 50 | 29 [28 to 30] | 72 [69 to 72] | 84 [73 to 97] | 0 | 51.1 | 0.57 [0.52 to 0.84] | 0 | 87 [79 to 109] |
-| designed | 50 | 27 [25 to 28] | 59 [46 to 59] | 61 [47 to 62] | 0 | 51.1 [51.1 to 51.1] | 0.54 [0.52 to 1.01] | 0 | 88 [81 to 122] |
-| naive | 100 | 34 [30 to 38] | 779 [778 to 1009] | 849 [779 to 1009] | 56 [52 to 61] | 97.7 [97.7 to 102.1] | 237.88 [233.13 to 243.01] | 0 | 1247 [1229 to 1565] |
-| designed-shared | 100 | 28 [28 to 30] | 92 [81 to 95] | 103 [93 to 116] | 0 | 97.6 [96.8 to 102.1] | 0.54 [0.53 to 0.75] | 0 | 335 [158 to 359] |
-| designed | 100 | 27 [26 to 28] | 45 [43 to 45] | 46 [43 to 58] | 0 | 102.1 [97.7 to 102.1] | 0.54 [0.51 to 1.02] | 0 | 133 [129 to 247] |
+| config | caches | write p50 ms | write p99 ms | write max ms | writes over 500 ms (client) | served MB/s | store reads per publish | live missing | corrupt delivered | publish to first byte p99 ms |
+|---|---|---|---|---|---|---|---|---|---|---|
+| naive | 25 | 30 [29 to 31] | 208 [207 to 241] | 211 [208 to 241] | 0 | 25.5 [24.4 to 25.5] | 61.13 [59.78 to 61.15] | 0 | 0 | 534 [528 to 541] |
+| designed-shared | 25 | 30 [30 to 31] | 76 [58 to 107] | 81 [62 to 108] | 0 | 25.5 | 0.53 [0.51 to 1.09] | 0 | 0 | 62 [59 to 84] |
+| designed | 25 | 27 [26 to 27] | 56 [44 to 56] | 57 [49 to 57] | 0 | 25.5 | 0.52 [0.52 to 0.53] | 0 | 0 | 81 [77 to 84] |
+| naive | 50 | 31 [27 to 33] | 336 [334 to 429] | 388 [343 to 429] | 0 | 51.1 [48.8 to 51.1] | 124.27 [119.30 to 125.00] | 0 | 0 | 769 [738 to 771] |
+| designed-shared | 50 | 29 [28 to 30] | 72 [69 to 72] | 84 [73 to 97] | 0 | 51.1 | 0.57 [0.52 to 0.84] | 0 | 0 | 87 [79 to 109] |
+| designed | 50 | 27 [25 to 28] | 59 [46 to 59] | 61 [47 to 62] | 0 | 51.1 [51.1 to 51.1] | 0.54 [0.52 to 1.01] | 0 | 0 | 88 [81 to 122] |
+| naive | 100 | 34 [30 to 38] | 779 [778 to 1009] | 849 [779 to 1009] | 56 [52 to 61] | 97.7 [97.7 to 102.1] | 237.88 [233.13 to 243.01] | 0 | 0 | 1247 [1229 to 1565] |
+| designed-shared | 100 | 28 [28 to 30] | 92 [81 to 95] | 103 [93 to 116] | 0 | 97.6 [96.8 to 102.1] | 0.54 [0.53 to 0.75] | 0 | 4 [0 to 34] | 335 [158 to 359] |
+| designed | 100 | 27 [26 to 28] | 45 [43 to 45] | 46 [43 to 58] | 0 | 102.1 [97.7 to 102.1] | 0.54 [0.51 to 1.02] | 0 | 0 | 133 [129 to 247] |
 
 27 runs, 45 s each, load average at start 2.9 to 6.7.
+
+### exp1 re-check of designed-shared at 100 caches (`results/exp1_diag.jsonl`)
+
+Two of the three exp1 runs above reported corrupt deliveries (4 and 34) with no fault injected; see `BUG_LOG.md` bug 6. Re-run with a fleet that separates truncated transfers from wrong bytes: repeat 0: 6600 delivered, 0 truncated, 0 corrupt, write p99 92 ms; repeat 1: 6600 delivered, 0 truncated, 0 corrupt, write p99 99 ms; repeat 2: 6600 delivered, 0 truncated, 0 corrupt, write p99 82 ms.
 
 ## exp2 live edge: hold-open versus polling (`results/exp2.jsonl`)
 
@@ -34,9 +38,9 @@ naive: one process, one store connection, every serve feature off. designed-shar
 |---|---|---|---|---|---|---|---|---|
 | naive | 13496 [13435 to 13500] | 4.00 [3.99 to 4.00] | 463 [452 to 468] | 797 [726 to 840] | 1021 [1013 to 1028] | 1323 [1242 to 1358] | 0.0 | 0 |
 | designed-no-hold | 13500 | 4.00 | 204 [202 to 207] | 1011 [1011 to 1117] | 774 [771 to 781] | 1554 [1532 to 1762] | 0.0 | 0 |
-| designed | 0 | 1.00 | 51 [48 to 53] | 99 [75 to 122] | 649 [639 to 658] | 785 [712 to 857] | 50.0 | 0 |
+| designed | 0 | 1.00 | 53 [48 to 53] | 122 [75 to 127] | 645 [639 to 658] | 749 [712 to 857] | 50.0 | 0 |
 
-8 runs, load average at start 2.9 to 10.8.
+9 runs, load average at start 2.7 to 10.8.
 
 ## exp3 failover: pipeline A drops or corrupts segments, B healthy (`results/exp3.jsonl`)
 
@@ -55,4 +59,79 @@ naive: one process, one store connection, every serve feature off. designed-shar
 | designed-dies-at-20s | 2250 | 60 | 1500 | 0 | 0 | 797 [796 to 801] | 897 [881 to 906] |
 
 27 runs, load average at start 2.9 to 7.4.
+
+## exp4 404 storm: requests for segments that cannot exist (`results/exp4.jsonl`)
+
+M requests per second spread over four kinds (far future, unknown rendition, unknown event, older than the DVR window), alongside 50 live caches, 45 s. Edge CPU is the edge process's CPU time over wall time (100% is one core).
+
+| config | M (req/s asked) | junk req/s achieved | junk rejected at control plane % | store metadata reads per s | edge CPU % | junk p99 ms | live request to delivery p99 ms | live missing |
+|---|---|---|---|---|---|---|---|---|
+| naive | 1000 | 1000 [1000 to 1000] | 0.0 | 1307 [1307 to 1307] | 50 [47 to 52] | 393.7 [358.7 to 396.5] | 1242 [1235 to 1272] | 0 |
+| designed-no-cp | 1000 | 1000 [1000 to 1000] | 0.0 | 982 [981 to 982] | 37 [36 to 39] | 1840.1 [1838.1 to 1886.2] | 695 [689 to 705] | 0 |
+| designed | 1000 | 1000 [1000 to 1000] | 100.0 | 2 [2 to 3] | 31 [31 to 32] | 6.8 [5.9 to 8.0] | 705 [698 to 708] | 0 |
+| naive | 3000 | 3000 [3000 to 3000] | 0.0 | 3306 [3293 to 3307] | 63 [62 to 64] | 374.8 [366.8 to 390.7] | 1313 [1228 to 1316] | 0 |
+| designed-no-cp | 3000 | 3000 [3000 to 3000] | 0.0 | 2910 [2904 to 2915] | 49 [46 to 51] | 1905.7 [1824.8 to 1909.8] | 690 [674 to 695] | 0 |
+| designed | 3000 | 3000 [3000 to 3000] | 100.0 | 1 [1 to 2] | 35 [35 to 37] | 8.8 [8.8 to 9.7] | 696 [694 to 726] | 0 |
+
+18 runs, load average at start 3.4 to 7.5.
+
+## exp5 overload: live traffic versus replay traffic (`results/exp5.jsonl`)
+
+Capacity: **1600 DVR requests/s**, the highest swept DVR rate with priority off where DVR p99 < 500 ms, >= 99% of DVR requests answered 200, and zero live-edge deliveries missed; the sweep's highest point, so the true knee is at or above it (sweep in `results/exp5_capacity.jsonl`). The origin runs as one process on embedded RocksDB with one Netty I/O thread on the serve path and the publish path on its own port and event loops; 50 live caches on 3 renditions; DVR readers open-loop at 1.5x and 2x capacity; 30 s. With priority on, the DVR token bucket is set to the capacity.
+
+| config | DVR req/s offered | live publish to first byte p99 ms | live request to delivery p99 ms | live missing | DVR refused with 503 % | DVR served per s | DVR p99 ms (served) |
+|---|---|---|---|---|---|---|---|
+| no-priority-x1.5 | 2400 | 63 [56 to 112] | 650 [637 to 723] | 0 | 0.0 | 2400 [2400 to 2400] | 104 [52 to 138] |
+| priority-x1.5 | 2400 | 95 [46 to 106] | 650 [650 to 657] | 0 | 33.2 [33.1 to 33.5] | 1604 [1595 to 1605] | 55 [53 to 149] |
+| no-priority-x2.0 | 3200 | 3394 [1364 to 4813] | 21004 [1905 to 30474] | 1523 [1497 to 2115] | 0.0 | 1875 [1128 to 2212] | 21217 [19546 to 27689] |
+| priority-x2.0 | 3200 | 54 [52 to 109] | 655 [644 to 671] | 0 | 49.9 [49.8 to 50.1] | 1604 [1596 to 1606] | 242 [156 to 242] |
+
+12 runs, load average at start 4.2 to 6.2.
+
+**Reading it.** At 1.5x the origin was not yet past its knee: every live segment arrived with priority off or on, and live p99 is inside the run-to-run spread either way. At 2x it was: with priority off the origin collapsed and most live deliveries were missed, while with priority on, replay was held to the configured rate, half of it was refused with a 503 and `max-age=5`, and every live segment arrived. The priority-off 2x runs were added after the rest (bug 8 had ruled them out until the publish path got its own event loops), so they ran a few minutes later in the same session.
+
+The failure it could not prevent is in `results/exp5_v1.jsonl` (bug 9): with the publish path on the same event loops as the serve path, 2,400 DVR requests/s starved the writes. Live deliveries were 182 of 2250 with priority off and 150 of 2250 with it on, write p99 5628 ms. Isolating the publish path is what fixed it.
+
+## exp6 isolation: the store serving reads is made slow (`results/exp6.jsonl`)
+
+Toxiproxy adds 200 ms to every response from the store instance that serves reads. In `shared` that store is also the write store; in `isolated` writes go to their own store and only replication (after the acknowledgement) and reads cross the slow proxy. 50 caches plus 50 DVR requests/s, 45 s.
+
+| config | write p50 ms | write p99 ms | A writes over 500 ms | replication p99 ms | DVR p99 ms | live request to delivery p99 ms | live missing |
+|---|---|---|---|---|---|---|---|
+| shared-slow0 | 25 [24 to 28] | 62 [59 to 74] | 0 | 0 | 39 [37 to 41] | 706 [703 to 717] | 0 |
+| shared-slow200 | 427 [426 to 431] | 466 [462 to 473] | 1 [0 to 1] | 0 | 436 [431 to 438] | 1110 [1108 to 1110] | 0 |
+| isolated-slow0 | 21 [21 to 23] | 40 [39 to 48] | 0 | 49 [40 to 59] | 33 [30 to 38] | 713 [709 to 719] | 0 |
+| isolated-slow200 | 26 [23 to 26] | 50 [45 to 53] | 0 | 445 [435 to 445] | 438 [438 to 439] | 736 [715 to 740] | 0 |
+
+12 runs, load average at start 4.1 to 7.9.
+
+## exp7 restart durability: edge-server killed with SIGKILL at 20 s (`results/exp7.jsonl`)
+
+50 caches, 60 s. The new process starts with an empty cache and resumes from the read store. Caches give up on a segment after 10 s.
+
+| repeat | kill to healthy s | delivered | expected | missing | connection errors seen by caches | worst request to delivery ms |
+|---|---|---|---|---|---|---|
+| 0 | 2.22 | 4500 | 4500 | 0 | 1050 | 1963 |
+| 1 | 2.22 | 4500 | 4500 | 0 | 1050 | 1953 |
+| 2 | 2.56 | 4500 | 4500 | 0 | 1133 | 2142 |
+
+## exp8 chaos: seeded random faults for five minutes (`results/exp8.jsonl`)
+
+50 caches plus 30 DVR requests/s. Faults: kill pipeline A (restart 10 to 20 s later), put pipeline B 3 s behind schedule, SIGKILL the edge-server, add 200 ms to the read store, make A corrupt half its segments. Invariants: nothing missing while one pipeline is healthy, nothing corrupt delivered, write p99 under 500 ms.
+
+| repeat | faults (time into run) | delivered | expected | missing | corrupt delivered | write p99 ms |
+|---|---|---|---|---|---|---|
+| 0 | lag_b@20s, corrupt_a@50s, corrupt_a@84s, slow_read@113s, slow_read@140s, lag_b@174s, kill_a@214s, lag_b@251s | 22500 | 22500 | 0 | 0 | 58 |
+| 1 | slow_read@18s, kill_a@55s, corrupt_a@94s, slow_read@131s, corrupt_a@166s, kill_a@206s, kill_edge@247s, slow_read@272s | 22500 | 22500 | 0 | 0 | 47 |
+| 2 | kill_edge@22s, lag_b@44s, corrupt_a@77s, kill_edge@116s, corrupt_a@142s, lag_b@185s, slow_read@224s, kill_a@254s | 22500 | 22500 | 0 | 0 | 55 |
+
+## M5 player: a real browser plays the live edge (`results/m5_player.jsonl`)
+
+Headless Chrome with hls.js on the demo page, two real-time ffmpeg pipelines publishing to the split origin (`scripts/demo.sh`, `bench/player_check.py`). Drift is the origin's live-edge segment minus the segment on screen, sampled every 500 ms after the first 20 s.
+
+| run | played s | samples | drift median (segments) | drift max | behind wall clock s | frames decoded | frames dropped | ad-break header seen |
+|---|---|---|---|---|---|---|---|---|
+| 2026-09-27T05:29 | 60 | 71 | 0 | 0 | 3.06 | 1738 | 27 | no |
+| 2026-09-27T05:31 | 90 | 135 | 0 | 0 | 2.88 | 2687 | 32 | yes |
+| 2026-09-27T05:38 | 90 | 136 | 0.0 | 1 | 3.14 | 2734 | 14 | yes |
 

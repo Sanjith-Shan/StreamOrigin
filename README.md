@@ -12,7 +12,34 @@ instances, and there are no real viewers or CDN. The design follows a published 
 production live origin, credited in [`DESIGN.md`](DESIGN.md); the point was to build it and
 measure the trade-offs, not to reproduce anyone's scale.
 
-<!-- RESULTS -->
+## What was measured
+
+Every figure is the median of three runs on one laptop (Apple M3 Pro, 18 GB), with the range and
+the raw rows in [`NUMBERS.md`](NUMBERS.md) and `results/*.jsonl`. The baseline is the naive origin
+(the same code with every serve-path feature off, both paths on one process and one store
+connection) unless the row names a narrower one.
+
+| Question | Baseline | StreamOrigin |
+|---|---|---|
+| Live-edge 404s per minute, 50 caches asking before the segment exists (exp2) | 13,496 | **0**: every request held and answered by the publish, 50 per publish |
+| Publish to first byte at the caches, p50 (exp2) | 463 ms | **51 ms** |
+| Segment write p99 while 100 caches storm the newest segment (exp1) | 779 ms, over the 500 ms budget | **45 ms** (92 ms if publish and serve share one process) |
+| Store reads per published segment in that storm (exp1) | 238 | **0.5** |
+| Pipeline A drops 30% of segments: segments missing at the caches (exp3) | 750 with one pipeline | **0**, served from pipeline B |
+| Pipeline A sends 10% garbage with no defect flag: corrupt segments delivered (exp3) | 150 | **0** |
+| 3,000 requests/s for segments that cannot exist: reads reaching the store (exp4) | 1 per request | **0**: all rejected from memory |
+| Read store made 200 ms slower: write p99 (exp6) | 466 ms (shared store) | **50 ms** (isolated) |
+| Replay traffic at 2x capacity: live segments missed of 2,250 (exp5) | 1,523 with priority off | **0**: replay held to capacity, half refused with 503 |
+| Edge-server killed mid-stream: live segments missed of 4,500 (exp7) | | **0**, healthy again in 2.2 s |
+| Five minutes of seeded random faults, three runs: segments missed or corrupt (exp8) | | **0 of 67,500** |
+
+A browser plays the live edge through the origin with **0 segments of drift**, about 3 s behind
+the wall clock (headless Chrome and hls.js, `results/m5_player.jsonl`):
+
+![Demo page: the live stream playing through the origin, with drift and origin counters](docs/demo.png)
+
+The bugs found on the way, including the ones that invalidated early numbers, are in
+[`BUG_LOG.md`](BUG_LOG.md).
 
 ## Run it
 

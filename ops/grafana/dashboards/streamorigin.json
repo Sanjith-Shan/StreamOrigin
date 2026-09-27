@@ -175,11 +175,6 @@
           "refId": "B",
           "expr": "rate(origin_served_pipeline_B_total[30s])",
           "legendFormat": "served from B"
-        },
-        {
-          "refId": "C",
-          "expr": "rate(origin_served_failover_total[30s])",
-          "legendFormat": "failover"
         }
       ]
     },
