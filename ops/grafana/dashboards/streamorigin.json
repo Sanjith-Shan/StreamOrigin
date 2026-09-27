@@ -1,0 +1,306 @@
+{
+  "uid": "streamorigin",
+  "title": "StreamOrigin",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "refresh": "5s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Segment write latency (publish path)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum(rate(origin_write_seconds_bucket[30s])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.99, sum(rate(origin_write_seconds_bucket[30s])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Live-edge serve latency (edge, 200s)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum(rate(origin_serve_live_200_seconds_bucket[30s])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.99, sum(rate(origin_serve_live_200_seconds_bucket[30s])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Responses per second",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(origin_status_200_total[30s])",
+          "legendFormat": "200"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(origin_status_404_total[30s])",
+          "legendFormat": "404"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(origin_status_503_total[30s])",
+          "legendFormat": "503 shed"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Where served bytes came from",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(origin_served_hold_total[30s])",
+          "legendFormat": "held request"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(origin_served_cache_total[30s])",
+          "legendFormat": "write-through cache"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(origin_served_store_total[30s]) + rate(origin_served_coalesced_total[30s])",
+          "legendFormat": "read store"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Pipelines",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(origin_served_pipeline_A_total[30s])",
+          "legendFormat": "served from A"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(origin_served_pipeline_B_total[30s])",
+          "legendFormat": "served from B"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(origin_served_failover_total[30s])",
+          "legendFormat": "failover"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Control plane and shedding",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(origin_cp_reject_total[30s])",
+          "legendFormat": "rejected before storage"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(origin_shed_dvr_limit_total[30s])",
+          "legendFormat": "DVR shed (limit)"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(origin_shed_live_limit_total[30s])",
+          "legendFormat": "live shed (limit)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Admission",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "origin_admission_limit",
+          "legendFormat": "adaptive limit"
+        },
+        {
+          "refId": "B",
+          "expr": "origin_admission_inflight",
+          "legendFormat": "in flight"
+        },
+        {
+          "refId": "C",
+          "expr": "origin_hold_waiting_requests",
+          "legendFormat": "held requests"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Store operations",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(origin_store_meta_reads_total[30s])",
+          "legendFormat": "meta reads"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(origin_store_data_reads_total[30s])",
+          "legendFormat": "data reads"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(origin_store_writes_total[30s])",
+          "legendFormat": "writes"
+        },
+        {
+          "refId": "D",
+          "expr": "rate(origin_store_coalesced_total[30s])",
+          "legendFormat": "coalesced"
+        }
+      ]
+    }
+  ],
+  "tags": [
+    "streamorigin"
+  ]
+}

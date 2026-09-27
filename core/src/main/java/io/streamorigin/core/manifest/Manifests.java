@@ -69,15 +69,22 @@ public final class Manifests {
 
     /** A sliding window of the last {@code window} segments up to the live edge. */
     public static String hlsMedia(EventDef event, Schedule schedule, long nowMs, int window) {
-        long edge = schedule.liveEdge(nowMs);
+        return hlsMedia(event, schedule.epochMs(), schedule.liveEdge(nowMs), window, false);
+    }
+
+    /** A sliding window of the last {@code window} segments up to and including {@code edge}. */
+    public static String hlsMedia(EventDef event, long epochMs, long edge, int window, boolean canBlockReload) {
         long first = Math.max(0, edge - window + 1);
         double seconds = event.segmentDurationMs() / 1000.0;
         StringBuilder sb = new StringBuilder("#EXTM3U\n#EXT-X-VERSION:7\n");
         sb.append("#EXT-X-TARGETDURATION:").append((long) Math.ceil(seconds)).append('\n');
+        if (canBlockReload) {
+            sb.append("#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES\n");
+        }
         sb.append("#EXT-X-MEDIA-SEQUENCE:").append(first).append('\n');
         sb.append("#EXT-X-MAP:URI=\"init.mp4\"\n");
         for (long k = first; k <= edge; k++) {
-            long start = schedule.epochMs() + k * event.segmentDurationMs();
+            long start = epochMs + k * event.segmentDurationMs();
             sb.append("#EXT-X-PROGRAM-DATE-TIME:").append(ISO.format(Instant.ofEpochMilli(start))).append('\n');
             sb.append("#EXTINF:").append(fmt(seconds)).append(",\n").append(k).append(".m4s\n");
         }

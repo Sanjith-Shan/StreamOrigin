@@ -90,7 +90,7 @@ public final class ServeHandler {
         Optional<EventState> state = controlPlane.event(eventId);
 
         if (file.equals("index.m3u8")) {
-            return hlsMedia(state, renditionId, now);
+            return hlsMedia(state, renditionId, now, req.queryParam("_HLS_msn"));
         }
         long k;
         if (file.equals("init.mp4")) {
@@ -142,7 +142,7 @@ public final class ServeHandler {
         }
 
         // 4. First valid copy: write-through cache, then one coalesced store read.
-        return resolver.resolve(key).flatMap(found -> {
+        return resolver.resolve(key, cls == RequestClass.LIVE_EDGE).flatMap(found -> {
             if (found.isPresent()) {
                 return ok(found.get().segment(), found.get().source().name(), state);
             }
@@ -254,12 +254,46 @@ public final class ServeHandler {
                 .collect(Collectors.joining(", "));
     }
 
-    private Mono<ServerResponse> hlsMedia(Optional<EventState> state, String renditionId, long now) {
+    /**
+     * HLS media playlist computed from the clock. With {@code _HLS_msn=N} (LL-HLS blocking reload)
+     * the request is held, like a live-edge segment request, until segment N is published, and the
+     * playlist that comes back includes it.
+     */
+    private Mono<ServerResponse> hlsMedia(Optional<EventState> state, String renditionId, long now,
+                                          Optional<String> blockingMsn) {
         if (state.isEmpty() || state.get().def().rendition(renditionId).isEmpty()) {
             return ServerResponse.notFound().build();
         }
-        String body = Manifests.hlsMedia(state.get().def(), state.get().schedule(), now, 6);
-        long untilNext = state.get().schedule().expectedPublishMs(state.get().schedule().liveEdge(now) + 1) - now;
+        Schedule schedule = state.get().schedule();
+        if (blockingMsn.isPresent() && features.isHoldOpen() && waiters != null) {
+            long msn;
+            try {
+                msn = Long.parseLong(blockingMsn.get());
+            } catch (NumberFormatException e) {
+                return ServerResponse.badRequest().build();
+            }
+            long edge = schedule.liveEdge(now);
+            if (msn > edge + props.getLookAheadSegments()) {
+                return ServerResponse.badRequest().build();
+            }
+            if (msn > edge) {
+                SegmentKey key = new SegmentKey(state.get().def().id(), renditionId, msn);
+                metrics.increment("hls.blocking_reloads");
+                Mono<Optional<Segment>> ready = resolver.peekCache(key).isPresent()
+                        ? Mono.just(resolver.peekCache(key))
+                        : waiters.await(key, schedule.expectedPublishMs(msn), schedule.expectedPublishMs(msn) + props.getHold().getGraceMs());
+                return ready.flatMap(found -> hlsResponse(state.get(), renditionId, clock.getAsLong(),
+                        found.isPresent() ? msn : -1));
+            }
+        }
+        return hlsResponse(state.get(), renditionId, now, -1);
+    }
+
+    private Mono<ServerResponse> hlsResponse(EventState state, String renditionId, long now, long atLeast) {
+        long edge = Math.max(state.schedule().liveEdge(now), atLeast);
+        String body = Manifests.hlsMedia(state.def(), state.schedule().epochMs(), edge, 6,
+                features.isHoldOpen() && waiters != null);
+        long untilNext = state.schedule().expectedPublishMs(edge + 1) - now;
         return ServerResponse.ok().contentType(HLS)
                 .header("Cache-Control", "max-age=" + Math.max(0, untilNext / 1000))
                 .header("Access-Control-Allow-Origin", "*")

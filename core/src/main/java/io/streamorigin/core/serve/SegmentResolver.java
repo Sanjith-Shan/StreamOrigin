@@ -90,6 +90,14 @@ public final class SegmentResolver {
     }
 
     public Mono<Optional<Resolved>> resolve(SegmentKey key) {
+        return resolve(key, true);
+    }
+
+    /**
+     * @param fillCache whether a store read may populate the cache. The cache holds the live edge;
+     *                  replay reads go to the read store and must not evict it.
+     */
+    public Mono<Optional<Resolved>> resolve(SegmentKey key, boolean fillCache) {
         if (cache != null) {
             Segment hit = cache.getIfPresent(key);
             if (hit != null) {
@@ -99,7 +107,7 @@ public final class SegmentResolver {
             metrics.increment("cache.misses");
         }
         if (!coalescing) {
-            return loadFromStore(key).map(o -> o.map(s -> new Resolved(s, Source.STORE)));
+            return loadFromStore(key, fillCache).map(o -> o.map(s -> new Resolved(s, Source.STORE)));
         }
         CompletableFuture<Optional<Segment>> mine = new CompletableFuture<>();
         CompletableFuture<Optional<Segment>> existing = inflight.putIfAbsent(key, mine);
@@ -107,7 +115,7 @@ public final class SegmentResolver {
             metrics.increment("store.coalesced");
             return Mono.fromFuture(existing, true).map(o -> o.map(s -> new Resolved(s, Source.COALESCED)));
         }
-        loadFromStore(key).subscribe(
+        loadFromStore(key, fillCache).subscribe(
                 v -> {
                     inflight.remove(key, mine);
                     mine.complete(v);
@@ -119,7 +127,7 @@ public final class SegmentResolver {
         return Mono.fromFuture(mine, true).map(o -> o.map(s -> new Resolved(s, Source.STORE)));
     }
 
-    private Mono<Optional<Segment>> loadFromStore(SegmentKey key) {
+    private Mono<Optional<Segment>> loadFromStore(SegmentKey key, boolean fillCache) {
         List<String> order = pipelineOrder.apply(key.event());
         if (order.isEmpty()) {
             return Mono.just(Optional.empty());
@@ -159,7 +167,7 @@ public final class SegmentResolver {
                     .map(Optional::of)
                     .defaultIfEmpty(Optional.empty());
         }).doOnNext(found -> found.ifPresent(s -> {
-            if (cache != null) {
+            if (cache != null && fillCache) {
                 cache.asMap().putIfAbsent(key, s);
             }
         }));

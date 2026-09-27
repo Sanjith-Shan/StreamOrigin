@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StreamOrigin Live</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b35; --text: #e6e8ee; --muted: #8b93a7;
+    --accent: #4ea1ff; --good: #3ecf8e; --warn: #f5b84a; --bad: #ff6b6b;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f7f9; --panel: #ffffff; --line: #e3e6ec; --text: #161a22; --muted: #5d6576;
+      --accent: #1f6fd1; --good: #148a5b; --warn: #b7791f; --bad: #c53030;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; }
+  header span { color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 16px; padding: 16px 20px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+  video { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; display: block; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 12px; }
+  .kpi { border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  .kpi .v { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .kpi .l { font-size: 12px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  td { padding: 5px 0; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; }
+  .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+  select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  #events { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); white-space: pre-wrap; word-break: break-word; margin-top: 8px; min-height: 2em; }
+  .muted { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>StreamOrigin</h1>
+  <span>Live edge served by the origin on this laptop. Synthetic test video, simulated everything else.</span>
+</header>
+<main>
+  <section class="panel">
+    <h2>Player</h2>
+    <video id="video" muted autoplay playsinline controls></video>
+    <div class="kpis">
+      <div class="kpi"><div class="v" id="drift">-</div><div class="l">Drift from live edge (segments)</div></div>
+      <div class="kpi"><div class="v" id="latency">-</div><div class="l">Behind wall clock (s)</div></div>
+      <div class="kpi"><div class="v" id="playing">-</div><div class="l">Playing segment</div></div>
+      <div class="kpi"><div class="v" id="edge">-</div><div class="l">Live edge segment</div></div>
+    </div>
+    <div class="row">
+      <label class="muted" for="rendition">Rendition</label>
+      <select id="rendition"><option value="-1">Auto</option></select>
+      <button id="notify">Announce ad break in 3 segments</button>
+    </div>
+    <div class="muted" style="margin-top:12px">Stream events on the latest segment (cumulative header)</div>
+    <div id="events">none yet</div>
+  </section>
+  <section class="panel">
+    <h2>Origin (edge process)</h2>
+    <table id="ops"></table>
+    <p class="muted">Counters since the process started or was last reset. Refreshed every second from <code>/internal/stats</code>.</p>
+  </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js"></script>
+<script>
+const EVENT = new URLSearchParams(location.search).get('event') || 'demo';
+const video = document.getElementById('video');
+let info = null;
+window.soSamples = [];
+
+async function loadInfo() {
+  info = await (await fetch(`/control/events/${EVENT}`)).json();
+}
+
+function liveEdge(now) {
+  // Same arithmetic as the origin's Schedule.liveEdge.
+  return Math.floor((now - info.epochMs - info.nominalEncodeDelayMs) / info.segmentDurationMs) - 1;
+}
+
+function start() {
+  const hls = new Hls({
+    lowLatencyMode: true,
+    liveSyncDuration: 1.2,
+    liveMaxLatencyDuration: 5,
+    maxLiveSyncPlaybackRate: 1.1,
+    backBufferLength: 10,
+  });
+  window.hls = hls;
+  hls.loadSource(`/live/${EVENT}/master.m3u8`);
+  hls.attachMedia(video);
+  hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+    const sel = document.getElementById('rendition');
+    data.levels.forEach((l, i) => sel.add(new Option(`${l.height}p`, i)));
+    sel.onchange = () => { hls.currentLevel = Number(sel.value); };
+    video.play().catch(() => {});
+  });
+  hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
+    const xhr = data.networkDetails;
+    const header = xhr && xhr.getResponseHeader ? xhr.getResponseHeader('X-Stream-Events') : null;
+    if (header) document.getElementById('events').textContent = header.split(', ').join('\n');
+  });
+}
+
+function tick() {
+  if (!info || !window.hls) return;
+  const now = Date.now();
+  const edge = liveEdge(now);
+  const playingDate = window.hls.playingDate;
+  document.getElementById('edge').textContent = edge;
+  if (!playingDate) return;
+  const playing = Math.floor((playingDate.getTime() - info.epochMs) / info.segmentDurationMs);
+  const drift = edge - playing;
+  const behind = (now - playingDate.getTime()) / 1000;
+  const d = document.getElementById('drift');
+  d.textContent = drift;
+  d.className = 'v ' + (drift <= 0 ? 'good' : drift <= 1 ? 'warn' : 'bad');
+  document.getElementById('latency').textContent = behind.toFixed(1);
+  document.getElementById('playing').textContent = playing;
+  window.soSamples.push({ t: now, edge, playing, drift, behind_s: behind, level: window.hls.currentLevel });
+  if (window.soSamples.length > 3600) window.soSamples.shift();
+}
+
+const OPS = [
+  ['Segments served', c => c['status.200']],
+  ['Answered by a held request', c => c['served.hold']],
+  ['Served from write-through cache', c => c['served.cache']],
+  ['Served from read store', c => (c['served.store'] || 0) + (c['served.coalesced'] || 0)],
+  ['Served from pipeline A', c => c['served.pipeline.A']],
+  ['Served from pipeline B (failover)', c => c['served.failover']],
+  ['Requests held at live edge', c => c['hold.requests']],
+  ['Holds woken by one publish (avg)', c => c['hold.wakeups'] ? (c['hold.woken'] / c['hold.wakeups']).toFixed(1) : null],
+  ['Rejected by control plane', c => c['cp.reject']],
+  ['404 answered', c => c['status.404']],
+  ['Shed with 503 (DVR)', c => (c['shed.dvr.limit'] || 0) + (c['shed.dvr.rate'] || 0)],
+  ['Store metadata reads', c => c['store.meta_reads']],
+  ['Store data reads', c => c['store.data_reads']],
+];
+
+async function ops() {
+  try {
+    const s = await (await fetch('/internal/stats')).json();
+    const c = s.counters || {};
+    const rows = OPS.map(([label, f]) => `<tr><td>${label}</td><td>${f(c) ?? 0}</td></tr>`);
+    const g = s.gauges || {};
+    rows.push(`<tr><td>Adaptive concurrency limit</td><td>${g['admission.limit'] ?? '-'}</td></tr>`);
+    rows.push(`<tr><td>Cache (MB)</td><td>${((g['cache.bytes'] || 0) / 1048576).toFixed(0)}</td></tr>`);
+    document.getElementById('ops').innerHTML = rows.join('');
+  } catch (e) { /* origin restarting */ }
+}
+
+document.getElementById('notify').onclick = async () => {
+  const at = liveEdge(Date.now()) + 3;
+  await fetch(`/control/events/${EVENT}/notifications`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: `ad-${at}`, fromSegment: at, type: 'ad-break', data: 'duration=30s' }),
+  });
+};
+
+loadInfo().then(start);
+setInterval(tick, 500);
+setInterval(ops, 1000);
+</script>
+</body>
+</html>

@@ -182,7 +182,7 @@ public final class EdgeFleet {
                 int status = resp.statusCode();
                 count("live.status." + status);
                 if (status == 200) {
-                    byte[] data = body ? resp.body().readAllBytes() : drain(resp.body());
+                    Body data = consume(resp.body());
                     long doneNanos = System.nanoTime();
                     record("live.request_us", (doneNanos - t0) / 1000);
                     long publishedAt = resp.headers().firstValue("X-Published-At").map(Long::parseLong).orElse(-1L);
@@ -197,8 +197,8 @@ public final class EdgeFleet {
                         count("live.delivered.failover");
                     }
                     resp.headers().firstValue("X-Served-From").ifPresent(s -> count("live.served_from." + s.toLowerCase()));
-                    countBy("live.bytes", data.length);
-                    if (body && !looksLikeSegment(data)) {
+                    countBy("live.bytes", data.length());
+                    if (body && !data.looksLikeSegment()) {
                         count("live.delivered_corrupt");
                     }
                     if (resp.headers().firstValue("X-Stream-Events").isPresent()) {
@@ -278,7 +278,7 @@ public final class EdgeFleet {
         try {
             HttpResponse<InputStream> resp = http.send(HttpRequest.newBuilder(URI.create(origin + path))
                     .timeout(Duration.ofSeconds(10)).GET().build(), HttpResponse.BodyHandlers.ofInputStream());
-            long n = drain(resp.body()).length;
+            long n = consume(resp.body()).length();
             int status = resp.statusCode();
             count(name + ".status." + status);
             countBy(name + ".bytes", n);
@@ -291,12 +291,26 @@ public final class EdgeFleet {
 
     // ------------------------------------------------------------------ helpers
 
-    static boolean looksLikeSegment(byte[] data) {
-        if (data.length < 1024) {
-            return false;
+    /** A response body reduced to what the fleet checks: its length and its first box header. */
+    record Body(long length, byte[] head) {
+        boolean looksLikeSegment() {
+            if (length < 1024 || head.length < 8) {
+                return false;
+            }
+            String box = new String(head, 4, 4, StandardCharsets.ISO_8859_1);
+            return box.equals("styp") || box.equals("moof") || box.equals("sidx");
         }
-        String box = new String(data, 4, 4, StandardCharsets.ISO_8859_1);
-        return box.equals("styp") || box.equals("moof") || box.equals("sidx");
+    }
+
+    /** Streams the body without holding it in memory, keeping only the first 8 bytes. */
+    static Body consume(InputStream in) {
+        try (in) {
+            byte[] head = in.readNBytes(8);
+            long rest = in.transferTo(java.io.OutputStream.nullOutputStream());
+            return new Body(head.length + rest, head);
+        } catch (Exception e) {
+            return new Body(0, new byte[0]);
+        }
     }
 
     private static Optional<Long> maxAge(HttpResponse<?> resp) {

@@ -150,19 +150,20 @@ class Run:
         self.procs.append((tag, p))
         return p
 
-    def start_origin(self, topology="split", props=None, edge_heap="2g"):
+    def start_origin(self, topology="split", props=None, edge_heap="2g", jvm_opts=()):
         props = dict(props or {})
+        self.jvm_opts = list(jvm_opts)
         common = [f"--origin.events-file={self.events}", "--logging.level.root=WARN",
                   "--logging.level.io.streamorigin=INFO"]
         extra = [f"--origin.{k}={v}" for k, v in props.items()]
         if topology == "combined":
-            self._spawn("origin", [JAVA, f"-Xmx{edge_heap}", "-jar", str(JARS["edge"]), "--origin.role=combined",
+            self._spawn("origin", [JAVA, f"-Xmx{edge_heap}", *self.jvm_opts, "-jar", str(JARS["edge"]), "--origin.role=combined",
                                    f"--server.port={EDGE_PORT}"] + common + extra)
             wait_healthy(EDGE)
             self.publish_url = EDGE
         else:
             self._spawn("publish", [JAVA, "-Xmx1g", "-jar", str(JARS["publish"])] + common + extra)
-            self._spawn("edge", [JAVA, f"-Xmx{edge_heap}", "-jar", str(JARS["edge"])] + common + extra)
+            self._spawn("edge", [JAVA, f"-Xmx{edge_heap}", *self.jvm_opts, "-jar", str(JARS["edge"])] + common + extra)
             wait_healthy(PUBLISH)
             wait_healthy(EDGE)
             self.publish_url = PUBLISH
@@ -175,6 +176,28 @@ class Run:
         for k, v in flags.items():
             args += ["--" + k.replace("_", "-"), str(v)]
         return self._spawn(f"packager-{pipeline}", args)
+
+    def restart_edge(self, props=None, edge_heap="2g"):
+        """Kills the edge-server outright and starts a fresh one (M6 restart durability)."""
+        for tag, p in self.procs:
+            if tag in ("edge", "edge-restarted") and p.poll() is None:
+                os.killpg(p.pid, signal.SIGKILL)
+                p.wait()
+        killed_at = time.time()
+        props = dict(props or {})
+        common = [f"--origin.events-file={self.events}", "--logging.level.root=WARN",
+                  "--logging.level.io.streamorigin=INFO"]
+        extra = [f"--origin.{k}={v}" for k, v in props.items()]
+        self._spawn("edge-restarted", [JAVA, f"-Xmx{edge_heap}", "-jar", str(JARS["edge"])] + common + extra)
+        wait_healthy(EDGE)
+        return killed_at, time.time()
+
+    def kill(self, tag):
+        """SIGKILLs every live process with this tag."""
+        for t, p in self.procs:
+            if t == tag and p.poll() is None:
+                os.killpg(p.pid, signal.SIGKILL)
+                p.wait()
 
     def reset_stats(self):
         for url in self.server_urls():
@@ -229,6 +252,35 @@ def run(name, **kw):
         yield r
     finally:
         r.stop()
+
+
+LOCK = Path("/tmp/claude-501/bench.lock")
+
+
+@contextmanager
+def bench_lock(owner="streamorigin", poll_s=30):
+    """Shared with the other project benchmarking on this laptop: one load test at a time."""
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    waited = 0
+    while True:
+        try:
+            LOCK.mkdir()
+            break
+        except FileExistsError:
+            if waited % 300 == 0:
+                who = (LOCK / "owner").read_text().strip() if (LOCK / "owner").exists() else "?"
+                print(f"bench lock held by {who}; waiting", flush=True)
+            time.sleep(poll_s)
+            waited += poll_s
+    (LOCK / "owner").write_text(f"{owner} pid={os.getpid()} since={time.strftime('%H:%M:%S')}\n")
+    try:
+        yield
+    finally:
+        try:
+            (LOCK / "owner").unlink()
+            LOCK.rmdir()
+        except FileNotFoundError:
+            pass
 
 
 def append(exp, row):
