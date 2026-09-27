@@ -314,7 +314,22 @@ def exp8(repeats, minutes=5):
     h.toxiproxy_reset()
 
 
-EXPERIMENTS = {"exp1": exp1, "exp2": exp2, "exp3": exp3, "exp4": exp4, "exp5_capacity": lambda r: exp5_capacity(),
+def diag_shared100(repeats):
+    """Re-runs the one configuration that showed corrupt deliveries, with the fleet that separates
+    truncated transfers from wrong bytes."""
+    cfg = {"topology": "combined", "props": {"store.shared": "true"}}
+    for rep in range(repeats):
+        print(brief(one_run("exp1_diag", "designed-shared-n100", cfg, TWO, fleet={"caches": 100, "jitter_ms": 100},
+                            measure_s=45, repeat=rep, extra={"caches": 100, "config": "designed-shared"})), flush=True)
+
+
+def exp2_redo(repeats):
+    """Replaces exp2/designed repeat 1, which overlapped another project's load test."""
+    print(brief(one_run("exp2", "designed", DESIGNED, TWO, fleet={"caches": 50, "jitter_ms": 100, "poll_ms": 250},
+                        repeat=1)), flush=True)
+
+
+EXPERIMENTS = {"diag_shared100": diag_shared100, "exp2_redo": lambda r: exp2_redo(r),"exp1": exp1, "exp2": exp2, "exp3": exp3, "exp4": exp4, "exp5_capacity": lambda r: exp5_capacity(),
                "exp5": exp5, "exp6": exp6, "exp7": exp7,
                "exp8": exp8}
 

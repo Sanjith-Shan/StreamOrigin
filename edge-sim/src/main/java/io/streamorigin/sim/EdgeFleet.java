@@ -183,6 +183,16 @@ public final class EdgeFleet {
                 count("live.status." + status);
                 if (status == 200) {
                     Body data = consume(resp.body());
+                    long declared = resp.headers().firstValueAsLong("Content-Length").orElse(-1);
+                    if (data.error() || (declared >= 0 && data.length() != declared)) {
+                        // A cache discards a truncated transfer and fetches again.
+                        count("live.truncated");
+                        if (counters.get("live.truncated").get() <= 3) {
+                            System.err.printf("truncated %s/%d: got %d of %d bytes, error=%s%n", rendition, k,
+                                    data.length(), declared, data.error());
+                        }
+                        continue;
+                    }
                     long doneNanos = System.nanoTime();
                     record("live.request_us", (doneNanos - t0) / 1000);
                     long publishedAt = resp.headers().firstValue("X-Published-At").map(Long::parseLong).orElse(-1L);
@@ -200,6 +210,8 @@ public final class EdgeFleet {
                     countBy("live.bytes", data.length());
                     if (body && !data.looksLikeSegment()) {
                         count("live.delivered_corrupt");
+                        System.err.printf("corrupt %s/%d from %s: %d bytes, head=%s%n", rendition, k, pipeline,
+                                data.length(), java.util.HexFormat.of().formatHex(data.head()));
                     }
                     if (resp.headers().firstValue("X-Stream-Events").isPresent()) {
                         count("live.with_stream_events");
@@ -292,7 +304,7 @@ public final class EdgeFleet {
     // ------------------------------------------------------------------ helpers
 
     /** A response body reduced to what the fleet checks: its length and its first box header. */
-    record Body(long length, byte[] head) {
+    record Body(long length, byte[] head, boolean error) {
         boolean looksLikeSegment() {
             if (length < 1024 || head.length < 8) {
                 return false;
@@ -307,9 +319,9 @@ public final class EdgeFleet {
         try (in) {
             byte[] head = in.readNBytes(8);
             long rest = in.transferTo(java.io.OutputStream.nullOutputStream());
-            return new Body(head.length + rest, head);
+            return new Body(head.length + rest, head, false);
         } catch (Exception e) {
-            return new Body(0, new byte[0]);
+            return new Body(0, new byte[0], true);
         }
     }
 

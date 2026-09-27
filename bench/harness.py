@@ -272,15 +272,18 @@ def bench_lock(owner="streamorigin", poll_s=30):
                 print(f"bench lock held by {who}; waiting", flush=True)
             time.sleep(poll_s)
             waited += poll_s
-    (LOCK / "owner").write_text(f"{owner} pid={os.getpid()} since={time.strftime('%H:%M:%S')}\n")
+    tag = f"{owner} pid={os.getpid()} "
+    (LOCK / "owner").write_text(f"{tag}since={time.strftime('%H:%M:%S')}\n")
     try:
         yield
     finally:
         try:
-            (LOCK / "owner").unlink()
-            LOCK.rmdir()
+            if (LOCK / "owner").read_text().startswith(tag):  # never remove someone else's lock
+                (LOCK / "owner").unlink()
+                LOCK.rmdir()
         except FileNotFoundError:
             pass
+        time.sleep(60)  # let the other project's waiter take its turn
 
 
 def append(exp, row):

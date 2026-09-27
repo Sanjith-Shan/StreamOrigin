@@ -8,3 +8,51 @@ Machine: Mac15,7, Apple M3 Pro, 12 cores, 18 GB, macOS 26.5.1, openjdk version "
 
 10 simulated caches, 3 renditions, 60 s, one pipeline: 900 of 900 deliveries, 0 missing, 0 404s.
 
+## exp1 storm: write latency while N caches request the newest segment within 100 ms (`results/exp1.jsonl`)
+
+naive: one process, one store connection, every serve feature off. designed-shared: every serve feature on, but publish and serve share one process and one store. designed: separate publish-server and edge-server processes on separate stores. Write latency is measured in the publish handler from request start to acknowledgement. Two pipelines publish every segment of 3 renditions, so 3 PUTs per pipeline every 2 s.
+
+| config | caches | write p50 ms | write p99 ms | write max ms | writes over 500 ms (client) | served MB/s | store reads per publish | live missing | publish to first byte p99 ms |
+|---|---|---|---|---|---|---|---|---|---|
+| naive | 25 | 30 [29 to 31] | 208 [207 to 241] | 211 [208 to 241] | 0 | 25.5 [24.4 to 25.5] | 61.13 [59.78 to 61.15] | 0 | 534 [528 to 541] |
+| designed-shared | 25 | 30 [30 to 31] | 76 [58 to 107] | 81 [62 to 108] | 0 | 25.5 | 0.53 [0.51 to 1.09] | 0 | 62 [59 to 84] |
+| designed | 25 | 27 [26 to 27] | 56 [44 to 56] | 57 [49 to 57] | 0 | 25.5 | 0.52 [0.52 to 0.53] | 0 | 81 [77 to 84] |
+| naive | 50 | 31 [27 to 33] | 336 [334 to 429] | 388 [343 to 429] | 0 | 51.1 [48.8 to 51.1] | 124.27 [119.30 to 125.00] | 0 | 769 [738 to 771] |
+| designed-shared | 50 | 29 [28 to 30] | 72 [69 to 72] | 84 [73 to 97] | 0 | 51.1 | 0.57 [0.52 to 0.84] | 0 | 87 [79 to 109] |
+| designed | 50 | 27 [25 to 28] | 59 [46 to 59] | 61 [47 to 62] | 0 | 51.1 [51.1 to 51.1] | 0.54 [0.52 to 1.01] | 0 | 88 [81 to 122] |
+| naive | 100 | 34 [30 to 38] | 779 [778 to 1009] | 849 [779 to 1009] | 56 [52 to 61] | 97.7 [97.7 to 102.1] | 237.88 [233.13 to 243.01] | 0 | 1247 [1229 to 1565] |
+| designed-shared | 100 | 28 [28 to 30] | 92 [81 to 95] | 103 [93 to 116] | 0 | 97.6 [96.8 to 102.1] | 0.54 [0.53 to 0.75] | 0 | 335 [158 to 359] |
+| designed | 100 | 27 [26 to 28] | 45 [43 to 45] | 46 [43 to 58] | 0 | 102.1 [97.7 to 102.1] | 0.54 [0.51 to 1.02] | 0 | 133 [129 to 247] |
+
+27 runs, 45 s each, load average at start 2.9 to 6.7.
+
+## exp2 live edge: hold-open versus polling (`results/exp2.jsonl`)
+
+50 caches, 3 renditions, both pipelines healthy, 60 s. A cache asks for segment k the moment its media is complete, before any pipeline has published it. Without a hold it gets 404 and retries after `max-age` if one is given, otherwise after 250 ms.
+
+| config | live-edge 404s per minute | requests per delivered segment | publish to first byte p50 ms | p99 ms | request to delivery p50 ms | p99 ms | held requests answered per publish | missing |
+|---|---|---|---|---|---|---|---|---|
+| naive | 13496 [13435 to 13500] | 4.00 [3.99 to 4.00] | 463 [452 to 468] | 797 [726 to 840] | 1021 [1013 to 1028] | 1323 [1242 to 1358] | 0.0 | 0 |
+| designed-no-hold | 13500 | 4.00 | 204 [202 to 207] | 1011 [1011 to 1117] | 774 [771 to 781] | 1554 [1532 to 1762] | 0.0 | 0 |
+| designed | 0 | 1.00 | 51 [48 to 53] | 99 [75 to 122] | 649 [639 to 658] | 785 [712 to 857] | 50.0 | 0 |
+
+8 runs, load average at start 2.9 to 10.8.
+
+## exp3 failover: pipeline A drops or corrupts segments, B healthy (`results/exp3.jsonl`)
+
+25 caches, 3 renditions, 60 s. `single` has only pipeline A. `naive` has both pipelines but serves the first copy present without validating it. `corrupt` is flagged by the packager; `silent` is garbage with no flag, caught (or not) by the size and box-header check. `dies-at-20s` stops pipeline A entirely. "A copies bad" counts rendition-segments A dropped or corrupted.
+
+| case | deliveries expected | A copies bad | served from B | missing at caches | corrupt delivered | request to delivery p50 ms | p99 ms |
+|---|---|---|---|---|---|---|---|
+| single-drop10 | 2250 | 6 [3 to 12] | 0 | 150 [75 to 300] | 0 | 628 [622 to 629] | 705 [701 to 706] |
+| designed-drop10 | 2250 | 6 [3 to 12] | 150 [75 to 300] | 0 | 0 | 634 [631 to 637] | 852 [848 to 863] |
+| single-drop30 | 2250 | 36 [21 to 36] | 0 | 750 [450 to 900] | 0 | 636 [630 to 637] | 716 [697 to 729] |
+| designed-drop30 | 2250 | 33 [21 to 36] | 750 [450 to 900] | 0 | 0 | 652 [637 to 672] | 872 [866 to 897] |
+| naive-corrupt10 | 2250 | 6 [3 to 12] | 0 | 0 | 150 [75 to 300] | 897 [885 to 901] | 1054 [1010 to 1103] |
+| designed-corrupt10 | 2250 | 6 [3 to 12] | 150 [75 to 300] | 0 | 0 | 636 [635 to 637] | 858 [821 to 867] |
+| naive-silent10 | 2250 | 6 [3 to 12] | 0 | 0 | 150 [75 to 300] | 905 [903 to 909] | 1036 [1025 to 1050] |
+| designed-silent10 | 2250 | 6 [3 to 12] | 150 [75 to 300] | 0 | 0 | 634 [631 to 641] | 838 [833 to 861] |
+| designed-dies-at-20s | 2250 | 60 | 1500 | 0 | 0 | 797 [796 to 801] | 897 [881 to 906] |
+
+27 runs, load average at start 2.9 to 7.4.
+
