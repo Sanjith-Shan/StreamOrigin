@@ -1,0 +1,10 @@
+.gradle/
+build/
+*.class
+.idea/
+*.iml
+.DS_Store
+data/
+run/
+*.log
+__pycache__/

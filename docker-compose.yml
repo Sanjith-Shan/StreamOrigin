@@ -1,0 +1,37 @@
+# Two independent Redis instances: the publish path writes to redis-write, and the serve path
+# reads from redis-read, which the publish path also writes to (simulated replication).
+# Toxiproxy sits in front of redis-read so experiments can make the read store slow.
+services:
+  redis-write:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "1500mb", "--maxmemory-policy", "allkeys-lru"]
+    ports: ["27379:6379"]
+    mem_limit: 1800m
+  redis-read:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "1500mb", "--maxmemory-policy", "allkeys-lru"]
+    ports: ["27380:6379"]
+    mem_limit: 1800m
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    ports: ["27474:8474", "27390:27390", "27391:27391"]
+    mem_limit: 128m
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    volumes: ["./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["27090:9090"]
+    mem_limit: 512m
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    profiles: ["obs"]
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["27030:3000"]
+    mem_limit: 512m
+    profiles: ["obs"]

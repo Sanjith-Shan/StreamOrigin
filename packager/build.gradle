@@ -1,0 +1,21 @@
+plugins { id 'application' }
+
+dependencies {
+    implementation 'org.hdrhistogram:HdrHistogram:2.2.2'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.19.2'
+    testImplementation platform('org.junit:junit-bom:5.12.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+application { mainClass = 'io.streamorigin.packager.Packager' }
+
+tasks.register('fatJar', Jar) {
+    archiveFileName = "${project.name}.jar"
+    manifest { attributes 'Main-Class': application.mainClass }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from sourceSets.main.output
+    dependsOn configurations.runtimeClasspath
+    from { configurations.runtimeClasspath.findAll { it.name.endsWith('jar') }.collect { zipTree(it) } }
+}
+build.dependsOn fatJar

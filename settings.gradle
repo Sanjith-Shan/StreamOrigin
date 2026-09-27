@@ -1,0 +1,2 @@
+rootProject.name = 'streamorigin'
+include 'core', 'publish-server', 'edge-server', 'packager', 'edge-sim'

@@ -1,0 +1,6 @@
+apiVersion: 1
+providers:
+  - name: streamorigin
+    folder: StreamOrigin
+    type: file
+    options: { path: /var/lib/grafana/dashboards }

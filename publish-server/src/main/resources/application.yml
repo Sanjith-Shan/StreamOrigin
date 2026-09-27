@@ -1,0 +1,17 @@
+server:
+  port: 27080
+spring:
+  application:
+    name: publish-server
+  main:
+    banner-mode: "off"
+origin:
+  role: publish
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: publish-server

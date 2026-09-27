@@ -1,0 +1,28 @@
+plugins {
+    id 'java-library'
+    id 'io.spring.dependency-management'
+}
+
+dependencyManagement {
+    imports { mavenBom 'org.springframework.boot:spring-boot-dependencies:3.5.16' }
+}
+
+dependencies {
+    api 'org.springframework.boot:spring-boot-starter-webflux'
+    api 'org.springframework.boot:spring-boot-starter-actuator'
+    api 'io.micrometer:micrometer-registry-prometheus'
+    api 'io.lettuce:lettuce-core'
+    api 'org.rocksdb:rocksdbjni:10.10.1'
+    api 'com.github.ben-manes.caffeine:caffeine'
+    api 'org.hdrhistogram:HdrHistogram:2.2.2'
+    api 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
+    api 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+    runtimeOnly('io.netty:netty-resolver-dns-native-macos::osx-aarch_64')
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+    testImplementation 'net.jqwik:jqwik:1.10.1'
+    testImplementation 'org.testcontainers:junit-jupiter:1.21.4'
+    testImplementation 'org.testcontainers:testcontainers:1.21.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}

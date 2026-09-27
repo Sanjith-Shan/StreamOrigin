@@ -1,0 +1,17 @@
+server:
+  port: 27081
+spring:
+  application:
+    name: edge-server
+  main:
+    banner-mode: "off"
+origin:
+  role: edge
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: edge-server

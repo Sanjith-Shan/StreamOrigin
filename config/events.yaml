@@ -1,0 +1,14 @@
+# The event every run script uses. Scripts overwrite the epoch before starting processes, so
+# every process reads the same one.
+events:
+  - id: demo
+    epoch: 2026-01-01T00:00:00Z
+    segmentDurationMs: 2000
+    dvrWindowSegments: 150
+    renditions:
+      - { id: 1080p, bandwidth: 4500000, width: 1920, height: 1080 }
+      - { id: 720p,  bandwidth: 2500000, width: 1280, height: 720 }
+      - { id: 480p,  bandwidth: 1000000, width: 854,  height: 480 }
+    pipelines:
+      - { id: A, encodeDelayMs: 600 }
+      - { id: B, encodeDelayMs: 600 }
